@@ -1,0 +1,293 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation template to create a Glue Job, Glue Catalog Database, Glue Catalog Tables, Crawler and Step function
+
+Resources:
+  # IAM Role for Glue Job
+  GlueJobRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: GlueJobReadPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                - "arn:aws:s3:::data-engineer-assignment-alonw/input/*"
+                - "arn:aws:s3:::data-engineer-assignment-alonw/src/*"
+        - PolicyName: GlueJobWritePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource:
+                - "arn:aws:s3:::data-engineer-assignment-alonw/objectives*"
+        - PolicyName: GlueJobDeletePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:DeleteObject
+                Resource:
+                  - "arn:aws:s3:::data-engineer-assignment-alonw/objectives/*"
+
+  # IAM Role for Glue Crawler
+  GlueCrawlerRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Principal:
+                Service:
+                  - glue.amazonaws.com
+              Action: "sts:AssumeRole"
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+        Policies:
+          - PolicyName: CrawlerS3ReadObjectsPolicy
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - s3:GetObject
+                  Resource:
+                    - "arn:aws:s3:::data-engineer-assignment-alonw/objectives/*"
+          - PolicyName: CrawlerS3ListBucketPolicy
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - s3:ListBucket
+                  Resource:
+                    - "arn:aws:s3:::data-engineer-assignment-alonw"
+
+  # IAM Role for Step Function
+  StepFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StepFunctionGluePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:StartJobRun
+                  - glue:GetJobRun
+                Resource: !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:job/${GlueJobResource}"
+              - Effect: Allow
+                Action:
+                    - glue:StartCrawler
+                    - glue:GetCrawler
+                Resource:
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${CrawlerQuestion3}"
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${CrawlerQuestion4}"
+
+
+  GlueCatalogDataBase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: de_assignment_db_alonw
+
+
+  # Glue Job to trigger ETL
+  GlueJobResource:
+    Type: "AWS::Glue::Job"
+    Properties:
+      Name: "data-engineer-assignment-alonw-glue-job"
+      Role: !GetAtt GlueJobRole.Arn
+      Command:
+        Name: "glueetl"
+        ScriptLocation: "s3://data-engineer-assignment-alonw/src/etl_runner.py"
+        PythonVersion: "3"
+      DefaultArguments:
+        "--job-language": "python"
+        "--extra-py-files": "s3://data-engineer-assignment-alonw/src/etl_code.zip"
+        "--enable-metrics": ""
+        "--enable-continuous-cloudwatch-log": "true"
+      MaxRetries: 0
+      Timeout: 30
+      GlueVersion: "3.0"
+      NumberOfWorkers: 2
+      WorkerType: "Standard"
+
+
+# Table for Question 1
+  TableQuestion1:
+    Type: AWS::Glue::Table
+    DependsOn:
+      - GlueCatalogDataBase
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueCatalogDataBase
+      TableInput:
+        Name: objective_1
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          EXTERNAL: "TRUE"
+        StorageDescriptor:
+          Columns:
+            - Name: date
+              Type: date
+            - Name: average_return
+              Type: double
+          Location: s3://data-engineer-assignment-alonw/objectives/objective_1/
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+            Parameters: {}
+
+# Table for Question 2
+  TableQuestion2:
+    Type: AWS::Glue::Table
+    DependsOn:
+      - GlueCatalogDataBase
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueCatalogDataBase
+      TableInput:
+        Name: objective_2
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          EXTERNAL: "TRUE"
+        StorageDescriptor:
+          Columns:
+            - Name: ticker
+              Type: string
+            - Name: value
+              Type: double
+          Location: s3://data-engineer-assignment-alonw/objectives/objective_2/
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+            Parameters: {}
+
+# Crawler For Creating Table for Question 3
+
+  CrawlerQuestion3:
+    Type: AWS::Glue::Crawler
+    DependsOn:
+      - GlueCatalogDataBase
+      - GlueJobResource
+    Properties:
+      Name: crawler_question_3
+      Role: !GetAtt GlueCrawlerRole.Arn
+      DatabaseName: !Ref GlueCatalogDataBase
+      Targets:
+        S3Targets:
+          - Path: s3://data-engineer-assignment-alonw/objectives/objective_3/
+      TablePrefix: ""
+      SchemaChangePolicy:
+        UpdateBehavior: "UPDATE_IN_DATABASE"
+        DeleteBehavior: "DEPRECATE_IN_DATABASE"
+
+# Crawler For Creating Table for Question 4
+
+  CrawlerQuestion4:
+    Type: AWS::Glue::Crawler
+    DependsOn:
+      - GlueCatalogDataBase
+      - GlueJobResource
+    Properties:
+      Name: crawler_question_4
+      Role: !GetAtt GlueCrawlerRole.Arn
+      DatabaseName: !Ref GlueCatalogDataBase
+      Targets:
+        S3Targets:
+          - Path: s3://data-engineer-assignment-alonw/objectives/objective_4/
+      TablePrefix: ""
+      SchemaChangePolicy:
+        UpdateBehavior: "UPDATE_IN_DATABASE"
+        DeleteBehavior: "DEPRECATE_IN_DATABASE"
+
+  # Step function to Orchestration GLUE Job -> Crawlers
+
+  GlueStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    DependsOn:
+      - GlueCatalogDataBase
+      - GlueJobResource
+      - CrawlerQuestion3
+      - CrawlerQuestion4
+    Properties:
+      StateMachineName: "de-assignment-alonw_orchestration"
+      RoleArn: !GetAtt StepFunctionRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "ETL orchestration: Glue job then Crawlers",
+          "StartAt": "RunGlueJob",
+          "States": {
+            "RunGlueJob": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::glue:startJobRun.sync",
+              "Parameters": {
+                "JobName": "${GlueJobResource}"
+              },
+              "Next": "RunCrawlers"
+            },
+            "RunCrawlers": {
+              "Type": "Parallel",
+              "Branches": [
+                {
+                  "StartAt": "RunCrawler3",
+                  "States": {
+                    "RunCrawler3": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+                      "Parameters": { 
+                        "Name": "crawler_question_3"
+                      },
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "StartAt": "RunCrawler4",
+                  "States": {
+                    "RunCrawler4": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+                      "Parameters": { 
+                        "Name": "crawler_question_4" 
+                      },
+                      "End": true
+                    }
+                  }
+                }
+              ],
+              "End": true
+            }
+          }
+        }
+
