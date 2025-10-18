@@ -28,7 +28,7 @@ export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
 printf '\nUpdating stack...\n\n'
 
 # Define the CloudFormation template file name and file path
-stack_yml="stack.yml"
+stack_yml="data-engineer-assignment-alonw.yml"
 stack=$STACK_NAME
 # Display the stack name being processed
 echo "Stack: $stack"
